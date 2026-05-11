@@ -8,7 +8,7 @@ struct DictatorCoreTests {
         let settings = DictationSettings()
 
         #expect(settings.language == .ru)
-        #expect(settings.selectedModel == .base)
+        #expect(settings.selectedModel == .gigaamV3E2ERNNT)
         #expect(settings.modelDownloadState == .notDownloaded)
         #expect(settings.recordingMode == .holdToTalk)
         #expect(settings.hotkey == .defaultHotkey)
@@ -17,7 +17,7 @@ struct DictatorCoreTests {
     @Test func settingsRoundTrip() throws {
         let settings = DictationSettings(
             language: .en,
-            selectedModel: .small,
+            selectedModel: .gigaamV3E2ERNNT,
             modelDownloadState: .ready,
             recordingMode: .toggle,
             hotkey: Hotkey(keyCode: 8, modifiers: 4_096, displayName: "⌃C"),

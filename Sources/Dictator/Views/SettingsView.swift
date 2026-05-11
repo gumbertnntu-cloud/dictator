@@ -87,6 +87,14 @@ private struct ModelSection: View {
                 ProgressView(value: modelDownloader.progress)
                     .progressViewStyle(.linear)
             }
+
+            if settingsStore.settings.modelDownloadState == .failed,
+               let message = modelDownloader.lastErrorMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
         }
     }
 

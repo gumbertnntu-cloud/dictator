@@ -1,6 +1,6 @@
 # Dictator
 
-Dictator is a small macOS menu bar utility for local Whisper-based dictation.
+Dictator is a small macOS menu bar utility for local GigaAM-based dictation.
 
 ## Current v1 status
 
@@ -19,6 +19,16 @@ Dictator is a small macOS menu bar utility for local Whisper-based dictation.
 ./script/build_and_run.sh
 ```
 
+## GigaAM runtime for local testing
+
+The app does not bundle the ASR runtime yet. Install one supported backend first, then press `Download` in Settings:
+
+```bash
+uv tool install git+https://github.com/aystream/gigaam-mlx.git
+```
+
+This is the fastest current path for Apple Silicon. Intel packaging still needs a separate backend validation.
+
 ## Package one file for sharing
 
 ```bash
@@ -35,5 +45,7 @@ dist/Dictator.zip
 
 - The packaged app currently builds for the local architecture. On the current machine that is Apple Silicon (`arm64`).
 - Universal Intel + Apple Silicon packaging still needs a working Xcode `xcbuild` setup or a separate Intel build machine.
-- `ModelDownloadService` currently tracks model readiness for the UI. Actual Whisper model resolution is delegated to the installed local `whisper` CLI.
+- The selected ASR model is `GigaAM v3 e2e RNNT`.
+- Runtime detection currently supports installed `gigaam-mlx`, `gigastt`, or the official Python `gigaam` package.
+- The Download button runs a real model/runtime prewarm and only then marks the model as ready.
 - The app is ad-hoc signed for local testing, not notarized for public distribution.

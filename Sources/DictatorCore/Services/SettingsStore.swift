@@ -12,7 +12,7 @@ public final class SettingsStore: ObservableObject {
         self.defaults = defaults
         if let data = defaults.data(forKey: key),
            let decoded = try? JSONDecoder().decode(DictationSettings.self, from: data) {
-            self.settings = decoded
+            self.settings = Self.migrated(decoded)
         } else {
             self.settings = DictationSettings()
         }
@@ -51,5 +51,18 @@ public final class SettingsStore: ObservableObject {
     private func save() {
         guard let data = try? JSONEncoder().encode(settings) else { return }
         defaults.set(data, forKey: key)
+    }
+
+    private static func migrated(_ settings: DictationSettings) -> DictationSettings {
+        guard settings.selectedModel != .gigaamV3E2ERNNT else { return settings }
+
+        return DictationSettings(
+            language: settings.language,
+            selectedModel: .gigaamV3E2ERNNT,
+            modelDownloadState: .notDownloaded,
+            recordingMode: settings.recordingMode,
+            hotkey: settings.hotkey,
+            launchAtLogin: settings.launchAtLogin
+        )
     }
 }

@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 public final class ModelDownloadService: ObservableObject {
     @Published public private(set) var progress: Double = 0
+    @Published public private(set) var lastErrorMessage: String?
 
     private let fileManager: FileManager
 
@@ -17,22 +18,30 @@ public final class ModelDownloadService: ObservableObject {
     }
 
     public func downloadSelectedModel(for store: SettingsStore) async {
+        guard store.settings.selectedModel == .gigaamV3E2ERNNT else {
+            store.updateModelState(.failed)
+            lastErrorMessage = "Unsupported model."
+            return
+        }
+
         store.updateModelState(.downloading)
+        lastErrorMessage = nil
         progress = 0
 
         do {
             try ensureModelDirectory()
-            for step in 1...20 {
-                try Task.checkCancellation()
-                try await Task.sleep(nanoseconds: 80_000_000)
-                progress = Double(step) / 20.0
-            }
+            progress = 0.1
+            try await GigaAMRuntime.prewarm()
+            progress = 0.9
             let marker = markerURL(for: store.settings.selectedModel)
-            let payload = "Dictator v1 model marker for \(store.settings.selectedModel.rawValue)\n"
+            let payload = "Dictator model marker for \(GigaAMRuntime.modelName)\n"
             try payload.write(to: marker, atomically: true, encoding: .utf8)
             store.updateModelState(.ready)
+            progress = 1
         } catch {
             store.updateModelState(.failed)
+            lastErrorMessage = error.localizedDescription
+            progress = 0
         }
     }
 

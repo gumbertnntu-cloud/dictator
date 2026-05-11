@@ -27,12 +27,6 @@ public enum DictationLanguage: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    public var placeholderTranscript: String {
-        switch self {
-        case .ru: "Тестовая локальная расшифровка Dictator."
-        case .en: "Dictator local transcription test."
-        }
-    }
 }
 
 public enum ModelDownloadState: String, CaseIterable, Codable, Identifiable {
@@ -77,15 +71,21 @@ public enum InsertionResult: Equatable {
     case failed
 }
 
-public enum ModelOption: String, CaseIterable, Codable, Identifiable {
+public enum ModelOption: String, Codable, Identifiable {
+    case gigaamV3E2ERNNT = "gigaam-v3-e2e-rnnt"
+    case turbo
     case tiny
     case base
     case small
+
+    public static let allCases: [ModelOption] = [.gigaamV3E2ERNNT]
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
+        case .gigaamV3E2ERNNT: "GigaAM v3 e2e RNNT"
+        case .turbo: "Whisper Large v3 Turbo"
         case .tiny: "Whisper Tiny"
         case .base: "Whisper Base"
         case .small: "Whisper Small"
@@ -94,6 +94,8 @@ public enum ModelOption: String, CaseIterable, Codable, Identifiable {
 
     public var subtitle: String {
         switch self {
+        case .gigaamV3E2ERNNT: "Best Russian dictation quality target"
+        case .turbo: "Best v1 quality target"
         case .tiny: "Fastest, lowest accuracy"
         case .base: "Balanced default"
         case .small: "Better quality, slower on Intel"
@@ -129,7 +131,7 @@ public struct DictationSettings: Codable, Equatable {
 
     public init(
         language: DictationLanguage = .ru,
-        selectedModel: ModelOption = .base,
+        selectedModel: ModelOption = .gigaamV3E2ERNNT,
         modelDownloadState: ModelDownloadState = .notDownloaded,
         recordingMode: RecordingMode = .holdToTalk,
         hotkey: Hotkey = .defaultHotkey,
