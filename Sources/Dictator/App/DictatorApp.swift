@@ -33,10 +33,6 @@ struct DictatorApp: App {
             Image(systemName: menuIconName)
         }
         .menuBarExtraStyle(.menu)
-
-        Settings {
-            SettingsView(appModel: appModel)
-        }
     }
 
     private var menuPrimaryTitle: String {

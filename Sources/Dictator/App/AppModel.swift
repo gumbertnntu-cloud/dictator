@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import DictatorCore
 import Foundation
+import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -17,6 +18,7 @@ final class AppModel: ObservableObject {
     private let hotkeyService: HotkeyService
     private var cancellables: Set<AnyCancellable> = []
     private var bubbleController: StatusBubbleWindowController?
+    private var settingsWindowController: SettingsWindowController?
 
     init() {
         settingsStore = SettingsStore()
@@ -46,7 +48,10 @@ final class AppModel: ObservableObject {
     }
 
     func openSettings() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(appModel: self)
+        }
+        settingsWindowController?.show()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -107,5 +112,40 @@ final class AppModel: ObservableObject {
             }
         }
         hotkeyRegistrationMessage = didRegister ? nil : "This shortcut is already used by macOS or another app."
+    }
+}
+
+@MainActor
+private final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    private weak var appModel: AppModel?
+
+    init(appModel: AppModel) {
+        self.appModel = appModel
+
+        let hostingView = NSHostingView(rootView: SettingsView(appModel: appModel))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 620),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Dictator Settings"
+        window.contentView = hostingView
+        window.isReleasedWhenClosed = false
+        window.center()
+
+        super.init(window: window)
+        window.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func show() {
+        guard let window else { return }
+        window.center()
+        window.makeKeyAndOrderFront(nil)
     }
 }
