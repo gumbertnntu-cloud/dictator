@@ -6,7 +6,9 @@ public final class TextInsertionService {
     public init() {}
 
     public func insert(text: String) -> InsertionResult {
-        guard AXIsProcessTrusted() else { return .failed }
+        guard AXIsProcessTrusted() else {
+            return pasteIntoFocusedApp(text) ? .inserted : .failed
+        }
 
         let systemWide = AXUIElementCreateSystemWide()
         var focusedValue: CFTypeRef?
@@ -46,7 +48,7 @@ public final class TextInsertionService {
             return setError == .success ? .inserted : .unsupportedTarget
         }
 
-        return .unsupportedTarget
+        return pasteIntoFocusedApp(text) ? .inserted : .unsupportedTarget
     }
 
     public func copyToPasteboard(_ text: String) {
@@ -65,5 +67,26 @@ public final class TextInsertionService {
             return false
         }
         return role == "AXSecureTextField"
+    }
+
+    private func pasteIntoFocusedApp(_ text: String) -> Bool {
+        copyToPasteboard(text)
+
+        guard
+            let commandDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x37, keyDown: true),
+            let vDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: true),
+            let vUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: false),
+            let commandUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x37, keyDown: false)
+        else {
+            return false
+        }
+
+        vDown.flags = .maskCommand
+        vUp.flags = .maskCommand
+        commandDown.post(tap: .cghidEventTap)
+        vDown.post(tap: .cghidEventTap)
+        vUp.post(tap: .cghidEventTap)
+        commandUp.post(tap: .cghidEventTap)
+        return true
     }
 }
