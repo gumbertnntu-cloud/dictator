@@ -7,7 +7,6 @@ import SwiftUI
 final class StatusBubbleWindowController {
     private let controller: DictationController
     private let audioCapture: AudioCaptureService
-    private let caretPositionService = CaretPositionService()
     private var window: NSPanel?
     private var cancellables: Set<AnyCancellable> = []
 
@@ -57,7 +56,7 @@ final class StatusBubbleWindowController {
         guard let window, let screen = NSScreen.main else { return }
         let size = window.contentView?.fittingSize ?? NSSize(width: 360, height: 84)
 
-        if let caretRect = caretPositionService.focusedTextRect() {
+        if let caretRect = controller.capturedTargetRect {
             let origin = originNearCaret(caretRect: caretRect, windowSize: size)
             window.setFrame(NSRect(origin: origin, size: size), display: true)
             return

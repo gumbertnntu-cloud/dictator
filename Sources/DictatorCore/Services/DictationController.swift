@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 public final class DictationController: ObservableObject {
     @Published public private(set) var state: DictationState = .idle
+    @Published public private(set) var capturedTargetRect: CGRect?
 
     private let settingsStore: SettingsStore
     private let modelDownloader: ModelDownloadService
@@ -12,6 +13,7 @@ public final class DictationController: ObservableObject {
     private let transcriptionService: TranscriptionService
     private let textInsertionService: TextInsertionService
     private var resetTask: Task<Void, Never>?
+    private var insertionTarget: TextInsertionTarget?
 
     public init(
         settingsStore: SettingsStore,
@@ -66,6 +68,9 @@ public final class DictationController: ObservableObject {
             return
         }
 
+        insertionTarget = textInsertionService.captureTarget()
+        capturedTargetRect = insertionTarget?.screenRect
+
         Task {
             guard await permissionService.requestMicrophoneAccess() else {
                 state = .error("Microphone permission is required.")
@@ -96,7 +101,7 @@ public final class DictationController: ObservableObject {
                     model: settingsStore.settings.selectedModel,
                     modelState: settingsStore.settings.modelDownloadState
                 )
-                let insertionResult = textInsertionService.insert(text: text)
+                let insertionResult = textInsertionService.insert(text: text, target: insertionTarget)
                 switch insertionResult {
                 case .inserted:
                     state = .inserted
@@ -121,6 +126,8 @@ public final class DictationController: ObservableObject {
     public func cancel() {
         resetTask?.cancel()
         audioCapture.cancel()
+        insertionTarget = nil
+        capturedTargetRect = nil
         state = .idle
     }
 
@@ -131,6 +138,8 @@ public final class DictationController: ObservableObject {
             await MainActor.run {
                 if self?.state != .idle {
                     self?.state = .idle
+                    self?.insertionTarget = nil
+                    self?.capturedTargetRect = nil
                 }
             }
         }
