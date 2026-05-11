@@ -3,11 +3,15 @@ import Foundation
 public enum TranscriptionError: Error, LocalizedError {
     case emptyRecording
     case modelUnavailable
+    case whisperRuntimeUnavailable
+    case whisperFailed
 
     public var errorDescription: String? {
         switch self {
         case .emptyRecording: "No speech was captured."
         case .modelUnavailable: "The selected model is not ready."
+        case .whisperRuntimeUnavailable: "Local Whisper runtime is not available."
+        case .whisperFailed: "Local Whisper did not return a transcript."
         }
     }
 }
@@ -28,8 +32,7 @@ public final class TranscriptionService {
             return transcript
         }
 
-        try await Task.sleep(nanoseconds: 900_000_000)
-        return language.placeholderTranscript
+        throw TranscriptionError.whisperFailed
     }
 
     private static func transcribeWithLocalWhisper(
@@ -47,7 +50,9 @@ public final class TranscriptionService {
         language: DictationLanguage,
         model: ModelOption
     ) throws -> String? {
-        guard let whisperPath = findWhisperExecutable() else { return nil }
+        guard let whisperPath = findWhisperExecutable() else {
+            throw TranscriptionError.whisperRuntimeUnavailable
+        }
 
         let workDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Dictator-\(UUID().uuidString)", isDirectory: true)
@@ -78,7 +83,7 @@ public final class TranscriptionService {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            return nil
+            throw TranscriptionError.whisperFailed
         }
 
         let transcriptURL = workDirectory.appendingPathComponent("dictation.txt")

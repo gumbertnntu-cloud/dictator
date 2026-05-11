@@ -5,6 +5,7 @@ import Foundation
 public final class DictationController: ObservableObject {
     @Published public private(set) var state: DictationState = .idle
     @Published public private(set) var capturedTargetRect: CGRect?
+    @Published public private(set) var capturedFallbackPoint: CGPoint?
 
     private let settingsStore: SettingsStore
     private let modelDownloader: ModelDownloadService
@@ -76,6 +77,7 @@ public final class DictationController: ObservableObject {
 
         insertionTarget = textInsertionService.captureTarget()
         capturedTargetRect = insertionTarget?.screenRect
+        capturedFallbackPoint = insertionTarget?.fallbackPoint
         guard insertionTarget != nil else {
             state = .error("Put the cursor in a text field and start with the hotkey.")
             scheduleReset()
@@ -139,6 +141,7 @@ public final class DictationController: ObservableObject {
         audioCapture.cancel()
         insertionTarget = nil
         capturedTargetRect = nil
+        capturedFallbackPoint = nil
         state = .idle
     }
 
@@ -151,6 +154,7 @@ public final class DictationController: ObservableObject {
                     self?.state = .idle
                     self?.insertionTarget = nil
                     self?.capturedTargetRect = nil
+                    self?.capturedFallbackPoint = nil
                 }
             }
         }

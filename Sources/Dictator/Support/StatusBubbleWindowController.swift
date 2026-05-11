@@ -62,6 +62,12 @@ final class StatusBubbleWindowController {
             return
         }
 
+        if let fallbackPoint = controller.capturedFallbackPoint {
+            let origin = originNearPoint(fallbackPoint, windowSize: size)
+            window.setFrame(NSRect(origin: origin, size: size), display: true)
+            return
+        }
+
         let visible = screen.visibleFrame
         let origin = NSPoint(
             x: visible.midX - size.width / 2,
@@ -80,6 +86,24 @@ final class StatusBubbleWindowController {
 
         if y < visible.minY {
             y = caretRect.maxY + spacing
+        }
+
+        x = min(max(x, visible.minX + 8), visible.maxX - windowSize.width - 8)
+        y = min(max(y, visible.minY + 8), visible.maxY - windowSize.height - 8)
+
+        return NSPoint(x: x, y: y)
+    }
+
+    private func originNearPoint(_ point: NSPoint, windowSize: NSSize) -> NSPoint {
+        let screen = NSScreen.screens.first { $0.visibleFrame.contains(point) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        let spacing: CGFloat = 14
+
+        var x = point.x + spacing
+        var y = point.y - windowSize.height - spacing
+
+        if y < visible.minY {
+            y = point.y + spacing
         }
 
         x = min(max(x, visible.minX + 8), visible.maxX - windowSize.width - 8)

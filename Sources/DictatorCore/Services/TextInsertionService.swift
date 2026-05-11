@@ -6,11 +6,13 @@ public final class TextInsertionTarget {
     fileprivate let element: AXUIElement
     fileprivate let processIdentifier: pid_t
     public let screenRect: CGRect?
+    public let fallbackPoint: CGPoint
 
-    fileprivate init(element: AXUIElement, processIdentifier: pid_t, screenRect: CGRect?) {
+    fileprivate init(element: AXUIElement, processIdentifier: pid_t, screenRect: CGRect?, fallbackPoint: CGPoint) {
         self.element = element
         self.processIdentifier = processIdentifier
         self.screenRect = screenRect
+        self.fallbackPoint = fallbackPoint
     }
 }
 
@@ -31,7 +33,8 @@ public final class TextInsertionService {
         return TextInsertionTarget(
             element: focusedElement,
             processIdentifier: pid,
-            screenRect: rectForBubble(near: focusedElement)
+            screenRect: rectForBubble(near: focusedElement),
+            fallbackPoint: NSEvent.mouseLocation
         )
     }
 
@@ -60,7 +63,8 @@ public final class TextInsertionService {
             return .inserted
         }
 
-        return pasteIntoTargetApp(text, target: target) ? .inserted : .unsupportedTarget
+        _ = pasteIntoTargetApp(text, target: target)
+        return .unsupportedTarget
     }
 
     public func copyToPasteboard(_ text: String) {
@@ -97,7 +101,7 @@ public final class TextInsertionService {
         if let target {
             focus(target: target, element: target.element)
         }
-        return pasteIntoFocusedApp(text)
+        return pasteIntoFocusedApp(text, targetProcessIdentifier: target?.processIdentifier)
     }
 
     private func focus(target: TextInsertionTarget?, element: AXUIElement) {
@@ -146,24 +150,25 @@ public final class TextInsertionService {
         return true
     }
 
-    private func pasteIntoFocusedApp(_ text: String) -> Bool {
+    private func pasteIntoFocusedApp(_ text: String, targetProcessIdentifier: pid_t? = nil) -> Bool {
         copyToPasteboard(text)
 
         guard
-            let commandDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x37, keyDown: true),
             let vDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: true),
-            let vUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: false),
-            let commandUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x37, keyDown: false)
+            let vUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: false)
         else {
             return false
         }
 
         vDown.flags = .maskCommand
         vUp.flags = .maskCommand
-        commandDown.post(tap: .cghidEventTap)
-        vDown.post(tap: .cghidEventTap)
-        vUp.post(tap: .cghidEventTap)
-        commandUp.post(tap: .cghidEventTap)
+        if let targetProcessIdentifier, targetProcessIdentifier > 0 {
+            vDown.postToPid(targetProcessIdentifier)
+            vUp.postToPid(targetProcessIdentifier)
+        } else {
+            vDown.post(tap: .cghidEventTap)
+            vUp.post(tap: .cghidEventTap)
+        }
         return true
     }
 
