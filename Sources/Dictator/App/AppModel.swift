@@ -58,7 +58,6 @@ final class AppModel: ObservableObject {
 
     func updateHotkey(_ hotkey: Hotkey) {
         settingsStore.updateHotkey(hotkey)
-        registerHotkey(hotkey)
     }
 
     func requestAccessibility() {
@@ -70,10 +69,29 @@ final class AppModel: ObservableObject {
     }
 
     private func observeSettings() {
+        settingsStore.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        modelDownloader.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        dictationController.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
         settingsStore.$settings
+            .map(\.hotkey)
             .removeDuplicates()
-            .sink { [weak self] settings in
-                self?.registerHotkey(settings.hotkey)
+            .sink { [weak self] hotkey in
+                self?.registerHotkey(hotkey)
             }
             .store(in: &cancellables)
     }

@@ -8,7 +8,11 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             header
             LanguageSection(settingsStore: appModel.settingsStore)
-            ModelSection(appModel: appModel)
+            ModelSection(
+                settingsStore: appModel.settingsStore,
+                modelDownloader: appModel.modelDownloader,
+                downloadAction: appModel.downloadSelectedModel
+            )
             HotkeySection(appModel: appModel)
             PressModeSection(settingsStore: appModel.settingsStore)
             PrivacySection(appModel: appModel)
@@ -48,13 +52,15 @@ private struct LanguageSection: View {
 }
 
 private struct ModelSection: View {
-    @ObservedObject var appModel: AppModel
+    @ObservedObject var settingsStore: SettingsStore
+    @ObservedObject var modelDownloader: ModelDownloadService
+    let downloadAction: () -> Void
 
     var body: some View {
         SettingsCard(title: "Model", systemImage: "square.and.arrow.down") {
             Picker("Model", selection: Binding(
-                get: { appModel.settingsStore.settings.selectedModel },
-                set: { appModel.settingsStore.updateSelectedModel($0) }
+                get: { settingsStore.settings.selectedModel },
+                set: { settingsStore.updateSelectedModel($0) }
             )) {
                 ForEach(ModelOption.allCases) { model in
                     Text(model.title).tag(model)
@@ -63,33 +69,33 @@ private struct ModelSection: View {
 
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(appModel.settingsStore.settings.selectedModel.subtitle)
+                    Text(settingsStore.settings.selectedModel.subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(appModel.settingsStore.settings.modelDownloadState.title)
+                    Text(settingsStore.settings.modelDownloadState.title)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(modelStateColor)
                 }
                 Spacer()
                 Button(downloadButtonTitle) {
-                    appModel.downloadSelectedModel()
+                    downloadAction()
                 }
-                .disabled(appModel.settingsStore.settings.modelDownloadState == .downloading)
+                .disabled(settingsStore.settings.modelDownloadState == .downloading)
             }
 
-            if appModel.settingsStore.settings.modelDownloadState == .downloading {
-                ProgressView(value: appModel.modelDownloader.progress)
+            if settingsStore.settings.modelDownloadState == .downloading {
+                ProgressView(value: modelDownloader.progress)
                     .progressViewStyle(.linear)
             }
         }
     }
 
     private var downloadButtonTitle: String {
-        appModel.settingsStore.settings.modelDownloadState == .ready ? "Download again" : "Download"
+        settingsStore.settings.modelDownloadState == .ready ? "Download again" : "Download"
     }
 
     private var modelStateColor: Color {
-        switch appModel.settingsStore.settings.modelDownloadState {
+        switch settingsStore.settings.modelDownloadState {
         case .ready: .green
         case .failed: .red
         case .downloading: .blue
