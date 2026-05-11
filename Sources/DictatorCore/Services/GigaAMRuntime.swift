@@ -240,6 +240,7 @@ enum GigaAMRuntime {
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
         process.currentDirectoryURL = workDirectory
+        process.environment = processEnvironment()
         process.standardOutput = stdout
         process.standardError = stderr
 
@@ -252,21 +253,45 @@ enum GigaAMRuntime {
         let stderrText = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
 
         guard process.terminationStatus == 0 else {
+            let diagnostic = diagnosticMessage(stdout: stdoutText, stderr: stderrText)
             DictatorLog.transcription.error(
-                "GigaAM command failed runtime=\(runtimeName, privacy: .public) status=\(process.terminationStatus, privacy: .public)"
+                "GigaAM command failed runtime=\(runtimeName, privacy: .public) status=\(process.terminationStatus, privacy: .public) diagnostic=\(diagnostic, privacy: .public)"
             )
-            throw GigaAMRuntimeError.commandFailed(runtimeName, diagnosticMessage(from: stderrText))
+            throw GigaAMRuntimeError.commandFailed(runtimeName, diagnostic)
         }
 
         return stdoutText
     }
 
-    private static func diagnosticMessage(from stderr: String) -> String {
-        let message = stderr
+    private static func processEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let knownDirectories = executableSearchDirectories().map(\.path)
+        let inheritedDirectories = (environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+        let path = (knownDirectories + inheritedDirectories)
+            .reduce(into: [String]()) { result, directory in
+                guard !directory.isEmpty, !result.contains(directory) else { return }
+                result.append(directory)
+            }
+            .joined(separator: ":")
+
+        environment["PATH"] = path
+        environment["PYTHONUNBUFFERED"] = "1"
+        environment["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+        return environment
+    }
+
+    private static func diagnosticMessage(stdout: String, stderr: String) -> String {
+        let message = [stderr, stdout]
+            .joined(separator: "\n")
             .split(whereSeparator: \.isNewline)
             .map(String.init)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
+            .filter { !$0.isEmpty }
+            .filter { !$0.contains("Fetching ") && !$0.contains("it/s") }
+            .filter { !$0.hasPrefix("Saved:") }
+            .last
 
         return String((message ?? "No diagnostic output.").prefix(180))
     }
