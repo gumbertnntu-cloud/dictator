@@ -22,6 +22,8 @@ struct DictatorApp: App {
             Divider()
 
             ModelMenuStatusView(appModel: appModel)
+            Text("Accessibility: \(appModel.accessibilityTrusted() ? "Allowed" : "Not allowed")")
+            Text("Build: \(AppBuild.label)")
 
             Divider()
 

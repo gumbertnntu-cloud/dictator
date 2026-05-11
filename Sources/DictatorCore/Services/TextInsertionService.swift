@@ -17,6 +17,10 @@ public final class TextInsertionTarget {
 public final class TextInsertionService {
     public init() {}
 
+    public func accessibilityTrusted() -> Bool {
+        AXIsProcessTrusted()
+    }
+
     public func captureTarget() -> TextInsertionTarget? {
         guard AXIsProcessTrusted(), let focusedElement = focusedElement() else { return nil }
         guard !isSecureField(focusedElement) else { return nil }
@@ -33,10 +37,11 @@ public final class TextInsertionService {
 
     public func insert(text: String, target: TextInsertionTarget?) -> InsertionResult {
         guard AXIsProcessTrusted() else {
-            return pasteIntoFocusedApp(text) ? .inserted : .failed
+            return .failed
         }
 
-        guard let focusedElement = target?.element ?? focusedElement() else { return .focusLost }
+        guard let target else { return .focusLost }
+        let focusedElement = target.element
         if isSecureField(focusedElement) {
             return .secureField
         }

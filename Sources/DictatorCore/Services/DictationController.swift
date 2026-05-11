@@ -68,8 +68,19 @@ public final class DictationController: ObservableObject {
             return
         }
 
+        guard textInsertionService.accessibilityTrusted() else {
+            state = .error("Allow Accessibility for Dictator.")
+            scheduleReset()
+            return
+        }
+
         insertionTarget = textInsertionService.captureTarget()
         capturedTargetRect = insertionTarget?.screenRect
+        guard insertionTarget != nil else {
+            state = .error("Put the cursor in a text field and start with the hotkey.")
+            scheduleReset()
+            return
+        }
 
         Task {
             guard await permissionService.requestMicrophoneAccess() else {

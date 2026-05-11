@@ -25,7 +25,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Dictator")
                 .font(.title2.weight(.semibold))
-            Text("Local dictation for the active macOS text field.")
+            Text("Build \(AppBuild.label)")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
