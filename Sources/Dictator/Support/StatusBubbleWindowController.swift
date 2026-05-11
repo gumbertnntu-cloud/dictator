@@ -55,60 +55,11 @@ final class StatusBubbleWindowController {
     private func positionWindow() {
         guard let window, let screen = NSScreen.main else { return }
         let size = window.contentView?.fittingSize ?? NSSize(width: 360, height: 84)
-
-        if let caretRect = controller.capturedTargetRect {
-            let origin = originNearCaret(caretRect: caretRect, windowSize: size)
-            window.setFrame(NSRect(origin: origin, size: size), display: true)
-            return
-        }
-
-        if let fallbackPoint = controller.capturedFallbackPoint {
-            let origin = originNearPoint(fallbackPoint, windowSize: size)
-            window.setFrame(NSRect(origin: origin, size: size), display: true)
-            return
-        }
-
         let visible = screen.visibleFrame
         let origin = NSPoint(
             x: visible.midX - size.width / 2,
             y: visible.maxY - size.height - 28
         )
         window.setFrame(NSRect(origin: origin, size: size), display: true)
-    }
-
-    private func originNearCaret(caretRect: NSRect, windowSize: NSSize) -> NSPoint {
-        let screen = NSScreen.screens.first { $0.visibleFrame.contains(caretRect.origin) } ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let spacing: CGFloat = 10
-
-        var x = caretRect.minX
-        var y = caretRect.minY - windowSize.height - spacing
-
-        if y < visible.minY {
-            y = caretRect.maxY + spacing
-        }
-
-        x = min(max(x, visible.minX + 8), visible.maxX - windowSize.width - 8)
-        y = min(max(y, visible.minY + 8), visible.maxY - windowSize.height - 8)
-
-        return NSPoint(x: x, y: y)
-    }
-
-    private func originNearPoint(_ point: NSPoint, windowSize: NSSize) -> NSPoint {
-        let screen = NSScreen.screens.first { $0.visibleFrame.contains(point) } ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let spacing: CGFloat = 14
-
-        var x = point.x + spacing
-        var y = point.y - windowSize.height - spacing
-
-        if y < visible.minY {
-            y = point.y + spacing
-        }
-
-        x = min(max(x, visible.minX + 8), visible.maxX - windowSize.width - 8)
-        y = min(max(y, visible.minY + 8), visible.maxY - windowSize.height - 8)
-
-        return NSPoint(x: x, y: y)
     }
 }

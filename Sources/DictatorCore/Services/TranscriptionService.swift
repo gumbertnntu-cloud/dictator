@@ -4,14 +4,18 @@ public enum TranscriptionError: Error, LocalizedError {
     case emptyRecording
     case modelUnavailable
     case whisperRuntimeUnavailable
-    case whisperFailed
+    case whisperCommandFailed(String)
+    case transcriptFileMissing(String)
+    case transcriptEmpty
 
     public var errorDescription: String? {
         switch self {
         case .emptyRecording: "No speech was captured."
         case .modelUnavailable: "The selected model is not ready."
         case .whisperRuntimeUnavailable: "Local Whisper runtime is not available."
-        case .whisperFailed: "Local Whisper did not return a transcript."
+        case let .whisperCommandFailed(reason): "Whisper failed: \(reason)"
+        case let .transcriptFileMissing(reason): "Whisper output missing: \(reason)"
+        case .transcriptEmpty: "Whisper returned empty text. Check microphone input."
         }
     }
 }
@@ -32,7 +36,7 @@ public final class TranscriptionService {
             return transcript
         }
 
-        throw TranscriptionError.whisperFailed
+        throw TranscriptionError.transcriptEmpty
     }
 
     private static func transcribeWithLocalWhisper(
@@ -62,7 +66,11 @@ public final class TranscriptionService {
         }
 
         let audioURL = workDirectory.appendingPathComponent("dictation.wav")
+        let stdoutURL = workDirectory.appendingPathComponent("stdout.log")
+        let stderrURL = workDirectory.appendingPathComponent("stderr.log")
         try writeWAV(recording, to: audioURL)
+        FileManager.default.createFile(atPath: stdoutURL.path, contents: nil)
+        FileManager.default.createFile(atPath: stderrURL.path, contents: nil)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: whisperPath)
@@ -75,22 +83,29 @@ public final class TranscriptionService {
             "--fp16", "False"
         ]
 
-        let errorPipe = Pipe()
-        process.standardOutput = Pipe()
-        process.standardError = errorPipe
+        let stdoutHandle = try FileHandle(forWritingTo: stdoutURL)
+        let stderrHandle = try FileHandle(forWritingTo: stderrURL)
+        process.standardOutput = stdoutHandle
+        process.standardError = stderrHandle
 
         try process.run()
         process.waitUntilExit()
+        try? stdoutHandle.close()
+        try? stderrHandle.close()
 
         guard process.terminationStatus == 0 else {
-            throw TranscriptionError.whisperFailed
+            throw TranscriptionError.whisperCommandFailed(diagnosticMessage(stdoutURL: stdoutURL, stderrURL: stderrURL))
         }
 
-        let transcriptURL = workDirectory.appendingPathComponent("dictation.txt")
-        guard FileManager.default.fileExists(atPath: transcriptURL.path) else { return nil }
+        guard let transcriptURL = transcriptFile(in: workDirectory, preferredName: "dictation.txt") else {
+            throw TranscriptionError.transcriptFileMissing(diagnosticMessage(stdoutURL: stdoutURL, stderrURL: stderrURL))
+        }
         let transcript = try String(contentsOf: transcriptURL, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return transcript.isEmpty ? nil : transcript
+        guard !transcript.isEmpty else {
+            throw TranscriptionError.transcriptEmpty
+        }
+        return transcript
     }
 
     private static func findWhisperExecutable() -> String? {
@@ -99,6 +114,38 @@ public final class TranscriptionService {
             "/usr/local/bin/whisper"
         ]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private static func transcriptFile(in directory: URL, preferredName: String) -> URL? {
+        let preferred = directory.appendingPathComponent(preferredName)
+        if FileManager.default.fileExists(atPath: preferred.path) {
+            return preferred
+        }
+
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else {
+            return nil
+        }
+
+        return files
+            .filter { $0.pathExtension == "txt" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .first
+    }
+
+    private static func diagnosticMessage(stdoutURL: URL, stderrURL: URL) -> String {
+        let stderr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
+        let stdout = (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? ""
+        let message = [stderr, stdout]
+            .joined(separator: "\n")
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && !$0.contains("%|") }
+
+        return String((message ?? "No diagnostic output.").prefix(140))
     }
 
     private static func writeWAV(_ recording: AudioRecording, to url: URL) throws {
