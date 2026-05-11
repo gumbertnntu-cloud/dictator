@@ -27,6 +27,9 @@ public final class TextInsertionService {
 
         var pid: pid_t = 0
         AXUIElementGetPid(focusedElement, &pid)
+        DictatorLog.insertion.info(
+            "Insertion target captured pid=\(pid, privacy: .public) role=\(self.role(of: focusedElement) ?? "unknown", privacy: .public)"
+        )
 
         return TextInsertionTarget(
             element: focusedElement,
@@ -47,6 +50,7 @@ public final class TextInsertionService {
         focus(target: target, element: focusedElement)
 
         if pasteIntoTargetApp(text, target: target) {
+            DictatorLog.insertion.info("Insertion succeeded method=paste-chain")
             return .inserted
         }
 
@@ -56,13 +60,16 @@ public final class TextInsertionService {
             text as CFTypeRef
         )
         if selectedTextResult == .success {
+            DictatorLog.insertion.info("Insertion succeeded method=AXSelectedText")
             return .inserted
         }
 
         if insertByAccessibilityValue(text, into: focusedElement) {
+            DictatorLog.insertion.info("Insertion succeeded method=AXValue")
             return .inserted
         }
 
+        DictatorLog.insertion.error("Insertion failed: all methods rejected target")
         return .unsupportedTarget
     }
 
@@ -155,14 +162,22 @@ public final class TextInsertionService {
         focus(target: target, element: target?.element ?? focusedElement() ?? AXUIElementCreateSystemWide())
 
         if pressPasteMenuItem(in: target?.applicationElement) {
+            DictatorLog.insertion.info("Paste chain succeeded method=menuPaste")
             return true
         }
 
         if postCommandVWithHIDEvents() {
+            DictatorLog.insertion.info("Paste chain posted method=globalCommandV")
             return true
         }
 
-        return postCommandVToProcessIdentifier(target?.processIdentifier)
+        let pidResult = postCommandVToProcessIdentifier(target?.processIdentifier)
+        if pidResult {
+            DictatorLog.insertion.info("Paste chain posted method=pidCommandV")
+        } else {
+            DictatorLog.insertion.error("Paste chain failed to post Command-V")
+        }
+        return pidResult
     }
 
     private func postCommandVWithHIDEvents() -> Bool {
@@ -214,7 +229,10 @@ public final class TextInsertionService {
             kAXMenuBarAttribute as CFString,
             &menuBarValue
         )
-        guard menuBarError == .success, let menuBarValue else { return false }
+        guard menuBarError == .success, let menuBarValue else {
+            DictatorLog.insertion.debug("Menu paste unavailable error=\(String(describing: menuBarError), privacy: .public)")
+            return false
+        }
 
         let menuBar = menuBarValue as! AXUIElement
         return pressPasteMenuItem(in: menuBar, depth: 0)

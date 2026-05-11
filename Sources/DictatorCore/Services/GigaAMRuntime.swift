@@ -31,6 +31,7 @@ enum GigaAMRuntime {
     static func prewarm() async throws {
         try await Task.detached(priority: .userInitiated) {
             let backend = try findBackend()
+            DictatorLog.transcription.info("GigaAM prewarm started backend=\(backend.name, privacy: .public)")
             let workDirectory = try makeWorkDirectory(prefix: "Dictator-GigaAM-Warmup")
             defer { try? FileManager.default.removeItem(at: workDirectory) }
 
@@ -69,12 +70,16 @@ enum GigaAMRuntime {
                     workDirectory: workDirectory
                 )
             }
+            DictatorLog.transcription.info("GigaAM prewarm finished backend=\(backend.name, privacy: .public)")
         }.value
     }
 
     static func transcribe(_ recording: AudioRecording) async throws -> String {
         try await Task.detached(priority: .userInitiated) {
             let backend = try findBackend()
+            DictatorLog.transcription.info(
+                "GigaAM transcription started backend=\(backend.name, privacy: .public) duration=\(recording.duration, privacy: .public)"
+            )
             let workDirectory = try makeWorkDirectory(prefix: "Dictator-GigaAM")
             defer { try? FileManager.default.removeItem(at: workDirectory) }
 
@@ -125,8 +130,12 @@ enum GigaAMRuntime {
             }
 
             guard let transcript = extractTranscript(from: output) else {
+                DictatorLog.transcription.error("GigaAM transcription returned empty text")
                 throw GigaAMRuntimeError.transcriptEmpty
             }
+            DictatorLog.transcription.info(
+                "GigaAM transcription finished backend=\(backend.name, privacy: .public) textLength=\((transcript as NSString).length, privacy: .public)"
+            )
             return transcript
         }.value
     }
@@ -158,6 +167,7 @@ enum GigaAMRuntime {
             return .pythonGigaAM(pythonPath)
         }
 
+        DictatorLog.transcription.error("GigaAM runtime unavailable")
         throw GigaAMRuntimeError.runtimeUnavailable
     }
 
@@ -242,6 +252,9 @@ enum GigaAMRuntime {
         let stderrText = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
 
         guard process.terminationStatus == 0 else {
+            DictatorLog.transcription.error(
+                "GigaAM command failed runtime=\(runtimeName, privacy: .public) status=\(process.terminationStatus, privacy: .public)"
+            )
             throw GigaAMRuntimeError.commandFailed(runtimeName, diagnosticMessage(from: stderrText))
         }
 

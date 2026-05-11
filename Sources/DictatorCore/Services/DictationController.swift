@@ -62,12 +62,14 @@ public final class DictationController: ObservableObject {
 
     public func beginRecording() {
         guard settingsStore.settings.modelDownloadState == .ready else {
+            DictatorLog.dictation.error("Dictation blocked: model is not ready")
             state = .error("Download a model before dictation.")
             scheduleReset()
             return
         }
 
         guard textInsertionService.accessibilityTrusted() else {
+            DictatorLog.dictation.error("Dictation blocked: Accessibility is not allowed")
             state = .error("Allow Accessibility for Dictator.")
             scheduleReset()
             return
@@ -75,6 +77,7 @@ public final class DictationController: ObservableObject {
 
         insertionTarget = textInsertionService.captureTarget()
         guard insertionTarget != nil else {
+            DictatorLog.dictation.error("Dictation blocked: no focused insertion target")
             state = .error("Put the cursor in a text field and start with the hotkey.")
             scheduleReset()
             return
@@ -82,6 +85,7 @@ public final class DictationController: ObservableObject {
 
         Task {
             guard await permissionService.requestMicrophoneAccess() else {
+                DictatorLog.dictation.error("Dictation blocked: microphone permission denied")
                 state = .error("Microphone permission is required.")
                 scheduleReset()
                 return
@@ -90,7 +94,9 @@ public final class DictationController: ObservableObject {
             do {
                 try audioCapture.start()
                 state = .listening
+                DictatorLog.dictation.info("Dictation listening started")
             } catch {
+                DictatorLog.dictation.error("Dictation failed to start microphone: \(error.localizedDescription, privacy: .public)")
                 state = .error("Could not start microphone.")
                 scheduleReset()
             }
@@ -101,6 +107,7 @@ public final class DictationController: ObservableObject {
         guard case .listening = state else { return }
         let recording = audioCapture.stop()
         state = .transcribing
+        DictatorLog.dictation.info("Dictation transcription started duration=\(recording.duration, privacy: .public)")
 
         Task {
             do {
@@ -111,6 +118,9 @@ public final class DictationController: ObservableObject {
                     modelState: settingsStore.settings.modelDownloadState
                 )
                 let insertionResult = textInsertionService.insert(text: text, target: insertionTarget)
+                DictatorLog.dictation.info(
+                    "Dictation insertion result=\(String(describing: insertionResult), privacy: .public) textLength=\((text as NSString).length, privacy: .public)"
+                )
                 switch insertionResult {
                 case .inserted:
                     state = .inserted
@@ -119,6 +129,7 @@ public final class DictationController: ObservableObject {
                 }
                 scheduleReset()
             } catch {
+                DictatorLog.dictation.error("Dictation failed: \(error.localizedDescription, privacy: .public)")
                 state = .error(error.localizedDescription)
                 scheduleReset()
             }
@@ -137,6 +148,7 @@ public final class DictationController: ObservableObject {
         audioCapture.cancel()
         insertionTarget = nil
         state = .idle
+        DictatorLog.dictation.info("Dictation cancelled")
     }
 
     private func scheduleReset() {

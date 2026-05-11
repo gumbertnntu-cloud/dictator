@@ -21,6 +21,9 @@ public final class AudioCaptureService: ObservableObject {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         sampleRate = format.sampleRate
+        DictatorLog.audio.info(
+            "Audio capture starting sampleRate=\(self.sampleRate, privacy: .public) channels=\(format.channelCount, privacy: .public)"
+        )
 
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
@@ -39,8 +42,14 @@ public final class AudioCaptureService: ObservableObject {
         }
 
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            DictatorLog.audio.error("Audio capture start failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
         isRecording = true
+        DictatorLog.audio.info("Audio capture started")
     }
 
     public func stop() -> AudioRecording {
@@ -58,7 +67,11 @@ public final class AudioCaptureService: ObservableObject {
         samples.removeAll(keepingCapacity: false)
         lock.unlock()
 
-        return AudioRecording(samples: captured, sampleRate: sampleRate)
+        let recording = AudioRecording(samples: captured, sampleRate: sampleRate)
+        DictatorLog.audio.info(
+            "Audio capture stopped duration=\(recording.duration, privacy: .public) samples=\(captured.count, privacy: .public)"
+        )
+        return recording
     }
 
     public func cancel() {
@@ -71,5 +84,6 @@ public final class AudioCaptureService: ObservableObject {
         lock.unlock()
         isRecording = false
         level = 0
+        DictatorLog.audio.info("Audio capture cancelled")
     }
 }
