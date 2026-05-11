@@ -29,7 +29,7 @@ uv tool install git+https://github.com/aystream/gigaam-mlx.git
 
 This is the fastest current path for Apple Silicon. Intel packaging still needs a separate backend validation.
 
-## Package one file for sharing
+## Package app zip
 
 ```bash
 ./script/package_app.sh
@@ -41,10 +41,26 @@ The distributable archive is written to:
 dist/Dictator.zip
 ```
 
+## Package DMG for sharing
+
+```bash
+./script/package_dmg.sh
+```
+
+The DMG is written to:
+
+```text
+dist/Dictator.dmg
+```
+
+The current DMG contains the app, a `/Applications` shortcut, Russian first-run notes,
+and `Install GigaAM Runtime.command` for Apple Silicon beta testers.
+
 ## Known limitations
 
 - The packaged app currently builds for the local architecture. On the current machine that is Apple Silicon (`arm64`).
 - Universal Intel + Apple Silicon packaging still needs a working Xcode `xcbuild` setup or a separate Intel build machine.
+- The DMG is not fully offline/self-contained yet: GigaAM runtime and model cache are installed by the helper script.
 - The selected ASR model is `GigaAM v3 e2e RNNT`.
 - Runtime detection currently supports installed `gigaam-mlx`, `gigastt`, or the official Python `gigaam` package.
 - The Download button runs a real model/runtime prewarm and only then marks the model as ready.
