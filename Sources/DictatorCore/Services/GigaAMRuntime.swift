@@ -477,7 +477,7 @@ enum GigaAMRuntime {
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let text = jsonTranscript(from: trimmed), !text.isEmpty {
+        if let text = jsonTranscript(from: trimmed), !text.isEmpty, !isEmptySpeechMarker(text) {
             return text
         }
 
@@ -489,8 +489,14 @@ enum GigaAMRuntime {
                 !line.isEmpty &&
                     !line.localizedCaseInsensitiveContains("download") &&
                     !line.localizedCaseInsensitiveContains("model") &&
-                    !line.localizedCaseInsensitiveContains("loading")
+                    !line.localizedCaseInsensitiveContains("loading") &&
+                    !isEmptySpeechMarker(line)
             }
+    }
+
+    private static func isEmptySpeechMarker(_ text: String) -> Bool {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.contains("no speech")
     }
 
     private static func transcriptText(in directory: URL) -> String? {
