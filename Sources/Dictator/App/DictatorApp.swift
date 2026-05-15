@@ -22,7 +22,13 @@ struct DictatorApp: App {
             Divider()
 
             ModelMenuStatusView(appModel: appModel)
-            Text("Accessibility: \(appModel.accessibilityTrusted() ? "Allowed" : "Not allowed")")
+            if appModel.accessibilityTrusted() {
+                Text("Accessibility: Allowed")
+            } else {
+                Button("Allow Accessibility…") {
+                    appModel.requestAccessibility()
+                }
+            }
             Text("Build: \(AppBuild.label)")
 
             Divider()

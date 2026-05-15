@@ -70,7 +70,11 @@ final class AppModel: ObservableObject {
     }
 
     func requestAccessibility() {
-        _ = permissionService.accessibilityTrusted(prompt: true)
+        let trusted = permissionService.accessibilityTrusted(prompt: true)
+        guard !trusted else { return }
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func accessibilityTrusted() -> Bool {
