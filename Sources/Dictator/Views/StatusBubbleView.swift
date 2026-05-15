@@ -10,15 +10,22 @@ struct StatusBubbleView: View {
             if case .transcribing = controller.state {
                 bubbleContent
                     .padding(12)
-                    .background(.regularMaterial, in: Circle())
+                    .background(
+                        Circle()
+                            .fill(.regularMaterial)
+                            .shadow(color: .black.opacity(0.22), radius: 12, y: 5)
+                    )
             } else {
                 bubbleContent
                     .padding(.horizontal, horizontalPadding)
                     .padding(.vertical, verticalPadding)
-                    .background(.regularMaterial, in: Capsule())
+                    .background(
+                        Capsule()
+                            .fill(.regularMaterial)
+                            .shadow(color: .black.opacity(0.22), radius: 12, y: 5)
+                    )
             }
         }
-        .shadow(color: .black.opacity(0.22), radius: 12, y: 5)
         .animation(.easeInOut(duration: 0.18), value: stateKey)
     }
 
