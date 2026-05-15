@@ -57,7 +57,7 @@ public enum DictationState: Equatable {
 
     public var isVisibleInBubble: Bool {
         switch self {
-        case .idle: false
+        case .idle, .inserted: false
         default: true
         }
     }
@@ -104,9 +104,16 @@ public enum ModelOption: String, Codable, Identifiable {
 }
 
 public struct Hotkey: Codable, Equatable {
+    public static let modifierOnlyKeyCode = UInt32.max
+    public static let functionModifier: UInt32 = 1 << 17
+
     public var keyCode: UInt32
     public var modifiers: UInt32
     public var displayName: String
+
+    public var isModifierOnly: Bool {
+        keyCode == Self.modifierOnlyKeyCode
+    }
 
     public init(keyCode: UInt32, modifiers: UInt32, displayName: String) {
         self.keyCode = keyCode
@@ -155,5 +162,17 @@ public struct AudioRecording: Sendable {
         self.samples = samples
         self.sampleRate = sampleRate
         self.duration = sampleRate > 0 ? Double(samples.count) / sampleRate : 0
+    }
+
+    public func chunks(maxDuration: TimeInterval) -> [AudioRecording] {
+        guard maxDuration > 0, duration > maxDuration, sampleRate > 0 else {
+            return [self]
+        }
+
+        let samplesPerChunk = max(1, Int(sampleRate * maxDuration))
+        return stride(from: 0, to: samples.count, by: samplesPerChunk).map { start in
+            let end = min(start + samplesPerChunk, samples.count)
+            return AudioRecording(samples: Array(samples[start..<end]), sampleRate: sampleRate)
+        }
     }
 }

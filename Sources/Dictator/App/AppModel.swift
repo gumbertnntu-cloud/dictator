@@ -55,6 +55,10 @@ final class AppModel: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func closeSettings() {
+        settingsWindowController?.close()
+    }
+
     func downloadSelectedModel() {
         Task {
             await modelDownloader.downloadSelectedModel(for: settingsStore)

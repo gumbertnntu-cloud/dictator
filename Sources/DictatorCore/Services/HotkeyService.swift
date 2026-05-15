@@ -1,3 +1,4 @@
+import AppKit
 import Carbon
 import Foundation
 
@@ -9,6 +10,9 @@ public enum HotkeyPhase {
 public final class HotkeyService {
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
+    private var localModifierMonitor: Any?
+    private var globalModifierMonitor: Any?
+    private var isModifierHotkeyActive = false
     private var onEvent: ((HotkeyPhase) -> Void)?
     private let hotKeyID = EventHotKeyID(signature: FourCharCode("DCTR"), id: 1)
 
@@ -22,6 +26,11 @@ public final class HotkeyService {
     public func register(_ hotkey: Hotkey, onEvent: @escaping (HotkeyPhase) -> Void) -> Bool {
         unregister()
         self.onEvent = onEvent
+
+        if hotkey.isModifierOnly {
+            registerModifierOnlyHotkey(hotkey)
+            return true
+        }
 
         var newHotKeyRef: EventHotKeyRef?
         let registrationStatus = RegisterEventHotKey(
@@ -64,6 +73,15 @@ public final class HotkeyService {
             RemoveEventHandler(eventHandlerRef)
             self.eventHandlerRef = nil
         }
+        if let localModifierMonitor {
+            NSEvent.removeMonitor(localModifierMonitor)
+            self.localModifierMonitor = nil
+        }
+        if let globalModifierMonitor {
+            NSEvent.removeMonitor(globalModifierMonitor)
+            self.globalModifierMonitor = nil
+        }
+        isModifierHotkeyActive = false
     }
 
     fileprivate func handle(event: EventRef?) -> OSStatus {
@@ -78,6 +96,35 @@ public final class HotkeyService {
             break
         }
         return noErr
+    }
+
+    private func registerModifierOnlyHotkey(_ hotkey: Hotkey) {
+        localModifierMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleModifierFlags(event.modifierFlags, hotkey: hotkey)
+            return event
+        }
+
+        globalModifierMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleModifierFlags(event.modifierFlags, hotkey: hotkey)
+        }
+    }
+
+    private func handleModifierFlags(_ flags: NSEvent.ModifierFlags, hotkey: Hotkey) {
+        let isActive = carbonModifiers(from: flags) == hotkey.modifiers
+        guard isActive != isModifierHotkeyActive else { return }
+
+        isModifierHotkeyActive = isActive
+        onEvent?(isActive ? .pressed : .released)
+    }
+
+    private func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var result: UInt32 = 0
+        if flags.contains(.command) { result += 256 }
+        if flags.contains(.shift) { result += 512 }
+        if flags.contains(.option) { result += 2_048 }
+        if flags.contains(.control) { result += 4_096 }
+        if flags.contains(.function) { result += Hotkey.functionModifier }
+        return result
     }
 }
 

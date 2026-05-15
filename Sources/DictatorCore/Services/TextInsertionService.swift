@@ -22,22 +22,118 @@ public final class TextInsertionService {
     }
 
     public func captureTarget() -> TextInsertionTarget? {
-        guard AXIsProcessTrusted(), let focusedElement = focusedElement() else { return nil }
-        guard !isSecureField(focusedElement) else { return nil }
+        guard AXIsProcessTrusted() else { return nil }
 
-        var pid: pid_t = 0
-        AXUIElementGetPid(focusedElement, &pid)
-        DictatorLog.insertion.info(
-            "Insertion target captured pid=\(pid, privacy: .public) role=\(self.role(of: focusedElement) ?? "unknown", privacy: .public)"
-        )
+        if let focusedElement = focusedElement() {
+            if isSecureField(focusedElement) { return nil }
+            var pid: pid_t = 0
+            AXUIElementGetPid(focusedElement, &pid)
+            DictatorLog.insertion.info(
+                "Insertion target captured (focused) pid=\(pid, privacy: .public) role=\(self.role(of: focusedElement) ?? "unknown", privacy: .public)"
+            )
+            return TextInsertionTarget(element: focusedElement, processIdentifier: pid)
+        }
 
-        return TextInsertionTarget(
-            element: focusedElement,
-            processIdentifier: pid
-        )
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            let pid = frontApp.processIdentifier
+            let appElement = AXUIElementCreateApplication(pid)
+            DictatorLog.insertion.info(
+                "Insertion target captured (frontmost-app fallback) pid=\(pid, privacy: .public) bundle=\(frontApp.bundleIdentifier ?? "?", privacy: .public)"
+            )
+            return TextInsertionTarget(element: appElement, processIdentifier: pid)
+        }
+
+        DictatorLog.insertion.error("Insertion target unavailable: no focused element, no frontmost app")
+        return nil
     }
 
-    public func insert(text: String, target: TextInsertionTarget?) -> InsertionResult {
+    public func caretBounds(target: TextInsertionTarget?) -> CGRect? {
+        guard AXIsProcessTrusted(), let target else { return nil }
+        let element = target.element
+
+        if let rect = caretBoundsViaSelectionRange(element: element) {
+            let converted = Self.convertAXRectToScreen(rect)
+            DictatorLog.insertion.debug(
+                "Caret bounds (range) ax=\(String(describing: rect), privacy: .public) screen=\(String(describing: converted), privacy: .public)"
+            )
+            if Self.rectIsVisibleOnAnyScreen(converted) {
+                return converted
+            }
+        }
+        if let rect = elementBounds(element: element) {
+            let converted = Self.convertAXRectToScreen(rect)
+            DictatorLog.insertion.debug(
+                "Caret bounds (element) ax=\(String(describing: rect), privacy: .public) screen=\(String(describing: converted), privacy: .public)"
+            )
+            if Self.rectIsVisibleOnAnyScreen(converted) {
+                return converted
+            }
+        }
+        DictatorLog.insertion.info("Caret bounds unavailable: AX returned no usable rect")
+        return nil
+    }
+
+    private static func rectIsVisibleOnAnyScreen(_ rect: CGRect) -> Bool {
+        guard rect.width.isFinite, rect.height.isFinite,
+              rect.origin.x.isFinite, rect.origin.y.isFinite else {
+            return false
+        }
+        return NSScreen.screens.contains { $0.frame.intersects(rect) }
+    }
+
+    private func caretBoundsViaSelectionRange(element: AXUIElement) -> CGRect? {
+        var rangeValue: CFTypeRef?
+        let rangeStatus = AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            &rangeValue
+        )
+        guard rangeStatus == .success, let rangeValue else { return nil }
+
+        var boundsValue: CFTypeRef?
+        let boundsStatus = AXUIElementCopyParameterizedAttributeValue(
+            element,
+            kAXBoundsForRangeParameterizedAttribute as CFString,
+            rangeValue,
+            &boundsValue
+        )
+        guard boundsStatus == .success, let boundsValue else { return nil }
+
+        var rect = CGRect.zero
+        let axRect = boundsValue as! AXValue
+        guard AXValueGetValue(axRect, .cgRect, &rect) else { return nil }
+        if rect.width.isFinite, rect.height.isFinite, rect.width >= 0, rect.height >= 0 {
+            let normalizedWidth = max(rect.width, 2)
+            let normalizedHeight = max(rect.height, 16)
+            return CGRect(x: rect.origin.x, y: rect.origin.y, width: normalizedWidth, height: normalizedHeight)
+        }
+        return nil
+    }
+
+    private func elementBounds(element: AXUIElement) -> CGRect? {
+        var positionValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
+              let positionValue else { return nil }
+        var origin = CGPoint.zero
+        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin) else { return nil }
+
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let sizeValue else { return nil }
+        var size = CGSize.zero
+        guard AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
+
+        return CGRect(origin: origin, size: size)
+    }
+
+    private static func convertAXRectToScreen(_ axRect: CGRect) -> CGRect {
+        guard let primary = NSScreen.screens.first else { return axRect }
+        let primaryHeight = primary.frame.height
+        let flippedY = primaryHeight - axRect.origin.y - axRect.size.height
+        return CGRect(x: axRect.origin.x, y: flippedY, width: axRect.size.width, height: axRect.size.height)
+    }
+
+    public func insert(text: String, target: TextInsertionTarget?) async -> InsertionResult {
         guard AXIsProcessTrusted() else {
             return .failed
         }
@@ -47,9 +143,9 @@ public final class TextInsertionService {
         if isSecureField(focusedElement) {
             return .secureField
         }
-        focus(target: target, element: focusedElement)
+        await focus(target: target, element: focusedElement)
 
-        if pasteIntoTargetApp(text, target: target) {
+        if await pasteIntoTargetApp(text, target: target) {
             DictatorLog.insertion.info("Insertion succeeded method=paste-chain")
             return .inserted
         }
@@ -78,6 +174,30 @@ public final class TextInsertionService {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    private func snapshotPasteboard() -> [NSPasteboardItem] {
+        let pasteboard = NSPasteboard.general
+        guard let items = pasteboard.pasteboardItems else { return [] }
+        return items.compactMap { item in
+            let copy = NSPasteboardItem()
+            var copiedAny = false
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                    copiedAny = true
+                }
+            }
+            return copiedAny ? copy : nil
+        }
+    }
+
+    private func restorePasteboard(_ items: [NSPasteboardItem]) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if !items.isEmpty {
+            pasteboard.writeObjects(items)
+        }
+    }
+
     private func focusedElement() -> AXUIElement? {
         let systemWide = AXUIElementCreateSystemWide()
         var focusedValue: CFTypeRef?
@@ -103,21 +223,21 @@ public final class TextInsertionService {
         return role == "AXSecureTextField"
     }
 
-    private func pasteIntoTargetApp(_ text: String, target: TextInsertionTarget?) -> Bool {
+    private func pasteIntoTargetApp(_ text: String, target: TextInsertionTarget?) async -> Bool {
         if let target {
-            focus(target: target, element: target.element)
+            await focus(target: target, element: target.element)
         }
-        return pasteIntoFocusedApp(text, target: target)
+        return await pasteIntoFocusedApp(text, target: target)
     }
 
-    private func focus(target: TextInsertionTarget?, element: AXUIElement) {
+    private func focus(target: TextInsertionTarget?, element: AXUIElement) async {
         if let target,
            let app = NSRunningApplication(processIdentifier: target.processIdentifier) {
             app.activate(options: [.activateIgnoringOtherApps])
         }
         _ = AXUIElementSetAttributeValue(target?.applicationElement ?? element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         _ = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        Thread.sleep(forTimeInterval: 0.18)
+        try? await Task.sleep(nanoseconds: 180_000_000)
     }
 
     private func insertByAccessibilityValue(_ text: String, into element: AXUIElement) -> Bool {
@@ -157,21 +277,30 @@ public final class TextInsertionService {
         return true
     }
 
-    private func pasteIntoFocusedApp(_ text: String, target: TextInsertionTarget? = nil) -> Bool {
+    private func pasteIntoFocusedApp(_ text: String, target: TextInsertionTarget? = nil) async -> Bool {
+        let savedItems = snapshotPasteboard()
         copyToPasteboard(text)
-        focus(target: target, element: target?.element ?? focusedElement() ?? AXUIElementCreateSystemWide())
+        defer {
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                self?.restorePasteboard(savedItems)
+                DictatorLog.insertion.info("Pasteboard restored items=\(savedItems.count, privacy: .public)")
+            }
+        }
 
-        if pressPasteMenuItem(in: target?.applicationElement) {
+        await focus(target: target, element: target?.element ?? focusedElement() ?? AXUIElementCreateSystemWide())
+
+        if await pressPasteMenuItem(in: target?.applicationElement) {
             DictatorLog.insertion.info("Paste chain succeeded method=menuPaste")
             return true
         }
 
-        if postCommandVWithHIDEvents() {
+        if await postCommandVWithHIDEvents() {
             DictatorLog.insertion.info("Paste chain posted method=globalCommandV")
             return true
         }
 
-        let pidResult = postCommandVToProcessIdentifier(target?.processIdentifier)
+        let pidResult = await postCommandVToProcessIdentifier(target?.processIdentifier)
         if pidResult {
             DictatorLog.insertion.info("Paste chain posted method=pidCommandV")
         } else {
@@ -180,7 +309,7 @@ public final class TextInsertionService {
         return pidResult
     }
 
-    private func postCommandVWithHIDEvents() -> Bool {
+    private func postCommandVWithHIDEvents() async -> Bool {
         guard
             let source = CGEventSource(stateID: .combinedSessionState),
             let vDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
@@ -193,13 +322,13 @@ public final class TextInsertionService {
         vDown.flags = .maskCommand
         vUp.flags = .maskCommand
         vDown.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.03)
+        try? await Task.sleep(nanoseconds: 30_000_000)
         vUp.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.12)
+        try? await Task.sleep(nanoseconds: 120_000_000)
         return true
     }
 
-    private func postCommandVToProcessIdentifier(_ processIdentifier: pid_t?) -> Bool {
+    private func postCommandVToProcessIdentifier(_ processIdentifier: pid_t?) async -> Bool {
         guard
             let processIdentifier,
             processIdentifier > 0,
@@ -214,13 +343,13 @@ public final class TextInsertionService {
         vDown.flags = .maskCommand
         vUp.flags = .maskCommand
         vDown.postToPid(processIdentifier)
-        Thread.sleep(forTimeInterval: 0.03)
+        try? await Task.sleep(nanoseconds: 30_000_000)
         vUp.postToPid(processIdentifier)
-        Thread.sleep(forTimeInterval: 0.12)
+        try? await Task.sleep(nanoseconds: 120_000_000)
         return true
     }
 
-    private func pressPasteMenuItem(in applicationElement: AXUIElement?) -> Bool {
+    private func pressPasteMenuItem(in applicationElement: AXUIElement?) async -> Bool {
         guard let applicationElement else { return false }
 
         var menuBarValue: CFTypeRef?
@@ -235,15 +364,15 @@ public final class TextInsertionService {
         }
 
         let menuBar = menuBarValue as! AXUIElement
-        return pressPasteMenuItem(in: menuBar, depth: 0)
+        return await pressPasteMenuItem(in: menuBar, depth: 0)
     }
 
-    private func pressPasteMenuItem(in element: AXUIElement, depth: Int) -> Bool {
+    private func pressPasteMenuItem(in element: AXUIElement, depth: Int) async -> Bool {
         guard depth < 8 else { return false }
 
         if isPasteMenuItem(element), isEnabled(element) {
             let actionError = AXUIElementPerformAction(element, kAXPressAction as CFString)
-            Thread.sleep(forTimeInterval: 0.12)
+            try? await Task.sleep(nanoseconds: 120_000_000)
             return actionError == .success
         }
 
@@ -257,8 +386,10 @@ public final class TextInsertionService {
             return false
         }
 
-        for child in children where pressPasteMenuItem(in: child, depth: depth + 1) {
-            return true
+        for child in children {
+            if await pressPasteMenuItem(in: child, depth: depth + 1) {
+                return true
+            }
         }
 
         return false

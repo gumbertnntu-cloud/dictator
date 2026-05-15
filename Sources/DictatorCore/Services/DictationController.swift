@@ -12,6 +12,7 @@ public final class DictationController: ObservableObject {
     private let transcriptionService: TranscriptionService
     private let textInsertionService: TextInsertionService
     private var resetTask: Task<Void, Never>?
+    private var transcriptionTask: Task<Void, Never>?
     private var insertionTarget: TextInsertionTarget?
 
     public init(
@@ -61,6 +62,8 @@ public final class DictationController: ObservableObject {
     }
 
     public func beginRecording() {
+        resetTask?.cancel()
+
         guard settingsStore.settings.modelDownloadState == .ready else {
             DictatorLog.dictation.error("Dictation blocked: model is not ready")
             state = .error("Download a model before dictation.")
@@ -109,31 +112,61 @@ public final class DictationController: ObservableObject {
         state = .transcribing
         DictatorLog.dictation.info("Dictation transcription started duration=\(recording.duration, privacy: .public)")
 
-        Task {
+        transcriptionTask?.cancel()
+        transcriptionTask = Task { [weak self] in
+            guard let self else { return }
+            let capturedTarget = self.insertionTarget
             do {
-                let text = try await transcriptionService.transcribe(
+                let text = try await self.transcriptionService.transcribe(
                     recording,
-                    language: settingsStore.settings.language,
-                    model: settingsStore.settings.selectedModel,
-                    modelState: settingsStore.settings.modelDownloadState
+                    language: self.settingsStore.settings.language,
+                    model: self.settingsStore.settings.selectedModel,
+                    modelState: self.settingsStore.settings.modelDownloadState
                 )
-                let insertionResult = textInsertionService.insert(text: text, target: insertionTarget)
+                try Task.checkCancellation()
+                let insertionResult = await self.textInsertionService.insert(text: text, target: capturedTarget)
                 DictatorLog.dictation.info(
                     "Dictation insertion result=\(String(describing: insertionResult), privacy: .public) textLength=\((text as NSString).length, privacy: .public)"
                 )
                 switch insertionResult {
                 case .inserted:
-                    state = .inserted
+                    self.state = .inserted
                 default:
-                    state = .fallback(text)
+                    self.state = .fallback(text)
                 }
-                scheduleReset()
+                self.scheduleReset()
+            } catch is CancellationError {
+                DictatorLog.dictation.info("Dictation transcription cancelled")
+                self.state = .idle
+                self.insertionTarget = nil
+            } catch GigaAMRuntimeError.cancelled {
+                DictatorLog.dictation.info("Dictation transcription cancelled (runtime)")
+                self.state = .idle
+                self.insertionTarget = nil
+            } catch GigaAMRuntimeError.transcriptEmpty {
+                DictatorLog.dictation.info("Dictation transcription empty — inserting placeholder dash")
+                await self.insertPlaceholder(target: capturedTarget)
+            } catch TranscriptionError.emptyRecording {
+                DictatorLog.dictation.info("Dictation recording empty — inserting placeholder dash")
+                await self.insertPlaceholder(target: capturedTarget)
             } catch {
                 DictatorLog.dictation.error("Dictation failed: \(error.localizedDescription, privacy: .public)")
-                state = .error(error.localizedDescription)
-                scheduleReset()
+                self.state = .error(error.localizedDescription)
+                self.scheduleReset()
             }
         }
+    }
+
+    private func insertPlaceholder(target: TextInsertionTarget?) async {
+        let placeholder = "-"
+        let result = await textInsertionService.insert(text: placeholder, target: target)
+        switch result {
+        case .inserted:
+            state = .inserted
+        default:
+            state = .fallback(placeholder)
+        }
+        scheduleReset()
     }
 
     public func copyFallbackText() {
@@ -143,8 +176,14 @@ public final class DictationController: ObservableObject {
         scheduleReset()
     }
 
+    public func caretBoundsOnScreen() -> CGRect? {
+        textInsertionService.caretBounds(target: insertionTarget)
+    }
+
     public func cancel() {
         resetTask?.cancel()
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
         audioCapture.cancel()
         insertionTarget = nil
         state = .idle

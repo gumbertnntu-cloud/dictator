@@ -1,3 +1,5 @@
 .build/
 dist/
 .DS_Store
+assets/AppIcon.iconset/
+assets/AppIcon-1024.png

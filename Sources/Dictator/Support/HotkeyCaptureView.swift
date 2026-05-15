@@ -43,17 +43,36 @@ struct HotkeyCaptureView: NSViewRepresentable {
             onCapture?(hotkey)
         }
 
+        override func flagsChanged(with event: NSEvent) {
+            guard isRecording else {
+                super.flagsChanged(with: event)
+                return
+            }
+
+            let modifiers = carbonModifiers(from: event.modifierFlags)
+            guard modifiers == Hotkey.functionModifier else { return }
+            onCapture?(
+                Hotkey(
+                    keyCode: Hotkey.modifierOnlyKeyCode,
+                    modifiers: modifiers,
+                    displayName: "Fn"
+                )
+            )
+        }
+
         private func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
             var result: UInt32 = 0
             if flags.contains(.command) { result += 256 }
             if flags.contains(.shift) { result += 512 }
             if flags.contains(.option) { result += 2_048 }
             if flags.contains(.control) { result += 4_096 }
+            if flags.contains(.function) { result += Hotkey.functionModifier }
             return result
         }
 
         private func displayName(for event: NSEvent) -> String {
             var parts: [String] = []
+            if event.modifierFlags.contains(.function) { parts.append("Fn") }
             if event.modifierFlags.contains(.control) { parts.append("⌃") }
             if event.modifierFlags.contains(.option) { parts.append("⌥") }
             if event.modifierFlags.contains(.shift) { parts.append("⇧") }

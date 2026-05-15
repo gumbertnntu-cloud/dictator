@@ -3,22 +3,33 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appModel: AppModel
+    @State private var showSavedToast = false
+    @State private var toastDismissTask: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-            LanguageSection(settingsStore: appModel.settingsStore)
-            ModelSection(
-                settingsStore: appModel.settingsStore,
-                modelDownloader: appModel.modelDownloader,
-                downloadAction: appModel.downloadSelectedModel
-            )
-            HotkeySection(appModel: appModel)
-            PressModeSection(settingsStore: appModel.settingsStore)
-            PrivacySection(appModel: appModel)
+        ZStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                ModelSection(
+                    settingsStore: appModel.settingsStore,
+                    modelDownloader: appModel.modelDownloader,
+                    downloadAction: appModel.downloadSelectedModel
+                )
+                HotkeySection(appModel: appModel)
+                PressModeSection(settingsStore: appModel.settingsStore)
+                PrivacySection(appModel: appModel)
+                footer
+            }
+            .padding(22)
+            .frame(width: 420)
+
+            if showSavedToast {
+                SavedToast()
+                    .padding(.top, 14)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
-        .padding(22)
-        .frame(width: 420)
+        .animation(.easeInOut(duration: 0.18), value: showSavedToast)
     }
 
     private var header: some View {
@@ -30,24 +41,41 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
         }
     }
+
+    private var footer: some View {
+        HStack {
+            Spacer()
+            Button("Save") {
+                triggerSavedFeedback()
+            }
+            .keyboardShortcut(.defaultAction)
+            .controlSize(.large)
+        }
+    }
+
+    private func triggerSavedFeedback() {
+        toastDismissTask?.cancel()
+        showSavedToast = true
+        toastDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            guard !Task.isCancelled else { return }
+            showSavedToast = false
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled else { return }
+            appModel.closeSettings()
+        }
+    }
 }
 
-private struct LanguageSection: View {
-    @ObservedObject var settingsStore: SettingsStore
-
+private struct SavedToast: View {
     var body: some View {
-        SettingsCard(title: "Language", systemImage: "globe") {
-            Picker("Language", selection: Binding(
-                get: { settingsStore.settings.language },
-                set: { settingsStore.updateLanguage($0) }
-            )) {
-                ForEach(DictationLanguage.allCases) { language in
-                    Text(language.title).tag(language)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-        }
+        Label("Сохранено", systemImage: "checkmark.circle.fill")
+            .font(.callout.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.green.opacity(0.92), in: Capsule())
+            .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
     }
 }
 
@@ -67,6 +95,18 @@ private struct ModelSection: View {
                 }
             }
 
+            ForEach(modelDownloader.runtimeDetails(), id: \.self) { line in
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(modelDownloader.modelDetails(), id: \.self) { line in
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(settingsStore.settings.selectedModel.subtitle)
@@ -75,9 +115,14 @@ private struct ModelSection: View {
                     Text(settingsStore.settings.modelDownloadState.title)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(modelStateColor)
+                    if let summary = modelDownloader.deliveryStatusSummary {
+                        Text(summary)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
-                Button(downloadButtonTitle) {
+                Button(modelDownloader.primaryActionTitle(for: settingsStore.settings.modelDownloadState)) {
                     downloadAction()
                 }
                 .disabled(settingsStore.settings.modelDownloadState == .downloading)
@@ -97,11 +142,6 @@ private struct ModelSection: View {
             }
         }
     }
-
-    private var downloadButtonTitle: String {
-        settingsStore.settings.modelDownloadState == .ready ? "Download again" : "Download"
-    }
-
     private var modelStateColor: Color {
         switch settingsStore.settings.modelDownloadState {
         case .ready: .green
