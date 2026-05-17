@@ -145,7 +145,32 @@ public final class TextInsertionService {
         }
         await focus(target: target, element: focusedElement)
 
-        if await pasteIntoTargetApp(text, target: target) {
+        let savedPasteboard = snapshotPasteboard()
+        copyToPasteboard(text)
+        let result = await runInsertionChain(text: text, target: target, focusedElement: focusedElement)
+
+        switch result {
+        case .inserted:
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                self?.restorePasteboard(savedPasteboard)
+                DictatorLog.insertion.info("Pasteboard restored items=\(savedPasteboard.count, privacy: .public)")
+            }
+        default:
+            DictatorLog.insertion.info(
+                "Insertion fell through — keeping transcript on pasteboard for manual paste savedItems=\(savedPasteboard.count, privacy: .public)"
+            )
+        }
+
+        return result
+    }
+
+    private func runInsertionChain(
+        text: String,
+        target: TextInsertionTarget,
+        focusedElement: AXUIElement
+    ) async -> InsertionResult {
+        if await pasteIntoTargetApp(target: target) {
             DictatorLog.insertion.info("Insertion succeeded method=paste-chain")
             return .inserted
         }
@@ -223,11 +248,11 @@ public final class TextInsertionService {
         return role == "AXSecureTextField"
     }
 
-    private func pasteIntoTargetApp(_ text: String, target: TextInsertionTarget?) async -> Bool {
+    private func pasteIntoTargetApp(target: TextInsertionTarget?) async -> Bool {
         if let target {
             await focus(target: target, element: target.element)
         }
-        return await pasteIntoFocusedApp(text, target: target)
+        return await pasteIntoFocusedApp(target: target)
     }
 
     private func focus(target: TextInsertionTarget?, element: AXUIElement) async {
@@ -277,16 +302,7 @@ public final class TextInsertionService {
         return true
     }
 
-    private func pasteIntoFocusedApp(_ text: String, target: TextInsertionTarget? = nil) async -> Bool {
-        let savedItems = snapshotPasteboard()
-        copyToPasteboard(text)
-        defer {
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 450_000_000)
-                self?.restorePasteboard(savedItems)
-                DictatorLog.insertion.info("Pasteboard restored items=\(savedItems.count, privacy: .public)")
-            }
-        }
+    private func pasteIntoFocusedApp(target: TextInsertionTarget? = nil) async -> Bool {
 
         await focus(target: target, element: target?.element ?? focusedElement() ?? AXUIElementCreateSystemWide())
 

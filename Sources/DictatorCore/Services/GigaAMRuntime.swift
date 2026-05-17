@@ -28,6 +28,7 @@ enum GigaAMRuntimeError: Error, LocalizedError {
 enum GigaAMRuntime {
     static let modelName = "GigaAM v3 e2e RNNT"
     private static let chunkDuration: TimeInterval = 20
+    private static let chunkOverlap: TimeInterval = 1.5
     private static let chunkingThreshold: TimeInterval = 25
     private static let chunkTimeoutSeconds: TimeInterval = 120
 
@@ -140,9 +141,12 @@ enum GigaAMRuntime {
         backend: Backend,
         workDirectory: URL
     ) async throws -> [String] {
-        let chunks = recording.duration > chunkingThreshold ? recording.chunks(maxDuration: chunkDuration) : [recording]
+        let chunks: [AudioRecording] = {
+            guard recording.duration > chunkingThreshold else { return [recording] }
+            return recording.chunks(maxDuration: chunkDuration, overlap: chunkOverlap)
+        }()
         DictatorLog.transcription.info(
-            "GigaAM chunk plan duration=\(recording.duration, privacy: .public) chunks=\(chunks.count, privacy: .public) chunkDuration=\(chunkDuration, privacy: .public)"
+            "GigaAM chunk plan duration=\(recording.duration, privacy: .public) chunks=\(chunks.count, privacy: .public) chunkDuration=\(chunkDuration, privacy: .public) overlap=\(chunks.count > 1 ? chunkOverlap : 0, privacy: .public)"
         )
 
         var results: [String] = []
@@ -202,11 +206,15 @@ enum GigaAMRuntime {
             }
 
             let transcript = extractTranscript(from: output)
-            DictatorLog.transcription.info(
-                "GigaAM chunk finished index=\(index, privacy: .public) duration=\(chunk.duration, privacy: .public) textLength=\(((transcript ?? "") as NSString).length, privacy: .public)"
-            )
             if let transcript {
+                DictatorLog.transcription.info(
+                    "GigaAM chunk finished index=\(index, privacy: .public) duration=\(chunk.duration, privacy: .public) textLength=\((transcript as NSString).length, privacy: .public)"
+                )
                 results.append(transcript)
+            } else {
+                DictatorLog.transcription.error(
+                    "GigaAM chunk empty index=\(index, privacy: .public) duration=\(chunk.duration, privacy: .public) totalChunks=\(chunks.count, privacy: .public) stdout=\(String(output.prefix(200)), privacy: .public)"
+                )
             }
         }
         return results

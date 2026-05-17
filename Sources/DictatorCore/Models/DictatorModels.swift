@@ -164,15 +164,23 @@ public struct AudioRecording: Sendable {
         self.duration = sampleRate > 0 ? Double(samples.count) / sampleRate : 0
     }
 
-    public func chunks(maxDuration: TimeInterval) -> [AudioRecording] {
+    public func chunks(maxDuration: TimeInterval, overlap: TimeInterval = 0) -> [AudioRecording] {
         guard maxDuration > 0, duration > maxDuration, sampleRate > 0 else {
             return [self]
         }
 
         let samplesPerChunk = max(1, Int(sampleRate * maxDuration))
-        return stride(from: 0, to: samples.count, by: samplesPerChunk).map { start in
+        let overlapSamples = max(0, Int(sampleRate * max(0, overlap)))
+        let step = max(1, samplesPerChunk - overlapSamples)
+
+        var result: [AudioRecording] = []
+        var start = 0
+        while start < samples.count {
             let end = min(start + samplesPerChunk, samples.count)
-            return AudioRecording(samples: Array(samples[start..<end]), sampleRate: sampleRate)
+            result.append(AudioRecording(samples: Array(samples[start..<end]), sampleRate: sampleRate))
+            if end == samples.count { break }
+            start += step
         }
+        return result
     }
 }
